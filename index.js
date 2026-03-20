@@ -42,12 +42,23 @@ app.post('/fiscalization/receipts', async (req, res) => {
     // Navigiraj kroz OFIS JSON strukturu
     let dataElements = [];
     try {
-      const events = body?.FiscalIntegrationPayload?.BusinessEvents?.BusinessEvent;
-      const event = Array.isArray(events) ? events[0] : events;
-      dataElements = event?.DataElements?.DataElement || [];
+      // Pokusaj sve moguce putanje
+      const payload = body?.FiscalIntegrationPayload || body;
+      const events = payload?.BusinessEvents?.BusinessEvent || payload?.BusinessEvent;
+      const eventsArray = Array.isArray(events) ? events : [events];
+      
+      // Uzmi poslednji event (najnoviji)
+      const event = eventsArray[eventsArray.length - 1];
+      const details = event?.BusinessEvent?.Details?.Detail || 
+                      event?.Details?.Detail || 
+                      event?.DataElements?.DataElement || [];
+      
+      dataElements = Array.isArray(details) ? details : [details];
+      console.log('DataElements pronadjeni:', dataElements.length);
+      console.log('Prvi element:', JSON.stringify(dataElements[0]));
     } catch(e) {
-      console.log('Pokusavam alternativnu strukturu...');
-      dataElements = body?.DataElements?.DataElement || [];
+      console.log('Greska pri parsiranju:', e.message);
+      dataElements = [];
     }
 
     console.log('DataElements pronadjeni:', dataElements.length);
