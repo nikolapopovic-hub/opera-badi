@@ -18,7 +18,7 @@ const badiAuth = Buffer.from(`${BADI_API_KEY}:${BADI_API_SECRET}`).toString('bas
 // Pomocna funkcija - izvuci vrednost iz DataElement array-a
 function getField(dataElements, fieldName) {
   if (!Array.isArray(dataElements)) return null;
-  const el = dataElements.find(e => e.DataElement === fieldName);
+  const el = dataElements.find(e => e?.DataElement === fieldName);
   return el ? el.NewValue : null;
 }
 
@@ -42,20 +42,23 @@ app.post('/fiscalization/receipts', async (req, res) => {
     // Navigiraj kroz OFIS JSON strukturu
     let dataElements = [];
     try {
-      // Pokusaj sve moguce putanje
       const payload = body?.FiscalIntegrationPayload || body;
       const events = payload?.BusinessEvents?.BusinessEvent || payload?.BusinessEvent;
       const eventsArray = Array.isArray(events) ? events : [events];
       
-      // Uzmi poslednji event (najnoviji)
-      const event = eventsArray[eventsArray.length - 1];
-      const details = event?.BusinessEvent?.Details?.Detail || 
-                      event?.Details?.Detail || 
-                      event?.DataElements?.DataElement || [];
+      // Prolazi kroz sve evente i uzmi prvi koji ima AMOUNT
+      for (const evt of eventsArray) {
+        const inner = evt?.BusinessEvent || evt;
+        const details = inner?.Details?.Detail || [];
+        const arr = Array.isArray(details) ? details : [details];
+        const hasAmount = arr.find(e => e?.DataElement === 'AMOUNT');
+        if (hasAmount) {
+          dataElements = arr;
+          break;
+        }
+      }
       
-      dataElements = Array.isArray(details) ? details : [details];
       console.log('DataElements pronadjeni:', dataElements.length);
-      console.log('Prvi element:', JSON.stringify(dataElements[0]));
     } catch(e) {
       console.log('Greska pri parsiranju:', e.message);
       dataElements = [];
