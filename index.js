@@ -4,8 +4,8 @@ const app = express();
 
 app.use(express.json({ limit: '10mb' }));
 
-const BADI_API_KEY = 'production.9ce7d0e4-f715-4f30-84f7-640fa3ff5218';
-const BADI_API_SECRET = '201c7739-5bac-4f2b-b415-e0970fe7df3f';
+const BADI_API_KEY = 'production.9b569627-6954-4035-ba9c-c389370f9146';
+const BADI_API_SECRET = '664d014d-e654-4438-8f9b-69f00fe120a2';
 const BADI_CLIENT_ID = '40f7725e-7ff0-49da-a5f4-530e30084783';
 const BADI_URL = 'https://api.production.badi.rs/v2/fiscalization/receipts';
 const badiAuth = Buffer.from(`${BADI_API_KEY}:${BADI_API_SECRET}`).toString('base64');
