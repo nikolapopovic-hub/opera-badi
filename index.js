@@ -2,9 +2,9 @@ const express = require('express');
 const axios = require('axios');
 const app = express();
 
-app.use(express.json());
-app.use(express.text({ type: 'application/xml' }));
-app.use(express.text({ type: 'text/xml' }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.text({ type: 'application/xml', limit: '10mb' }));
+app.use(express.text({ type: 'text/xml', limit: '10mb' }));
 
 // Badi API kredencijali
 const BADI_API_KEY = 'production.9ce7d0e4-f715-4f30-84f7-640fa3ff5218';
@@ -12,21 +12,23 @@ const BADI_API_SECRET = '201c7739-5bac-4f2b-b415-e0970fe7df3f';
 const BADI_CLIENT_ID = '40f7725e-7ff0-49da-a5f4-530e30084783';
 const BADI_URL = 'https://api.production.badi.rs/v2/fiscalization/receipts';
 
-// Basic Auth header za Badi
+// Basic Auth header za Badi - base64(key:secret)
 const badiAuth = Buffer.from(`${BADI_API_KEY}:${BADI_API_SECRET}`).toString('base64');
 
-// Mapiranje nacina placanja OPERA -> Badi
-function mapPaymentMethod(currency, amount) {
-  return { cash: parseFloat(amount) || 0 };
+// Pomocna funkcija - izvuci vrednost iz DataElement array-a
+function getField(dataElements, fieldName) {
+  if (!Array.isArray(dataElements)) return null;
+  const el = dataElements.find(e => e.DataElement === fieldName);
+  return el ? el.NewValue : null;
 }
 
-// Mapiranje poreske oznake
+// Mapiranje poreske oznake za Srbiju
 function mapTaxLabel(taxRate) {
   const rate = parseFloat(taxRate);
-  if (rate === 20) return 'Đ';
-  if (rate === 10) return 'E';
+  if (rate >= 20) return 'Đ';
+  if (rate >= 10) return 'E';
   if (rate === 0) return 'G';
-  return 'Đ'; // default za Srbiju
+  return 'Đ';
 }
 
 // Glavna ruta - prima OFIS payload od OPERA Cloud
@@ -35,25 +37,43 @@ app.post('/fiscalization/receipts', async (req, res) => {
   console.log('Body:', JSON.stringify(req.body, null, 2));
 
   try {
-    const data = req.body;
+    const body = req.body;
 
-    // Izvuci podatke iz OFIS payloada
-    const amount = parseFloat(data.AMOUNT || data.amount || data.TRX_AMOUNT || 0);
-    const transactionCode = data.TRANSACTION_CODE || data.transactionCode || '1000';
-    const quantity = parseFloat(data.QUANTITY || data.quantity || 1);
-    const taxRate = data.TAX_ELEMENTS || data.taxRate || '20%';
-    const taxLabel = mapTaxLabel(taxRate.replace('%', ''));
+    // Navigiraj kroz OFIS JSON strukturu
+    let dataElements = [];
+    try {
+      const events = body?.FiscalIntegrationPayload?.BusinessEvents?.BusinessEvent;
+      const event = Array.isArray(events) ? events[0] : events;
+      dataElements = event?.DataElements?.DataElement || [];
+    } catch(e) {
+      console.log('Pokusavam alternativnu strukturu...');
+      dataElements = body?.DataElements?.DataElement || [];
+    }
+
+    console.log('DataElements pronadjeni:', dataElements.length);
+
+    // Izvuci vrednosti
+    const amount = parseFloat(getField(dataElements, 'AMOUNT') || getField(dataElements, 'TRX AMOUNT') || 0);
+    const quantity = parseFloat(getField(dataElements, 'QUANTITY') || 1);
+    const transactionCode = getField(dataElements, 'TRANSACTION CODE') || '1000';
+    const taxRate = (getField(dataElements, 'TAX2 RATE') || getField(dataElements, 'TAX ELEMENTS') || '20').replace('%', '').trim();
+    const taxLabel = mapTaxLabel(taxRate);
+    const unitPrice = quantity > 0 ? amount / quantity : amount;
+
+    console.log(`Amount: ${amount}, Qty: ${quantity}, TrxCode: ${transactionCode}, Tax: ${taxRate}%`);
 
     // Kreiraj Badi JSON
     const badiPayload = {
       invoiceType: 'normal',
       transactionType: 'sale',
-      payments: mapPaymentMethod(data.CURRENCY_CODE, amount),
+      payments: {
+        cash: amount
+      },
       items: [
         {
           sku: parseInt(transactionCode) || 1000,
           quantity: quantity,
-          unitPrice: amount / quantity,
+          unitPrice: unitPrice,
           taxRateLabel: taxLabel
         }
       ],
@@ -72,13 +92,14 @@ app.post('/fiscalization/receipts', async (req, res) => {
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Basic ${badiAuth}`
-      }
+      },
+      timeout: 30000
     });
 
     console.log('=== Badi odgovor ===');
     console.log(JSON.stringify(badiResponse.data, null, 2));
 
-    // Vrati OPERA Cloud uspesан odgovor
+    // Vrati OPERA Cloud uspešan odgovor
     res.status(200).json({
       success: true,
       fiscalNumber: badiResponse.data.invoiceNumber,
@@ -98,7 +119,7 @@ app.post('/fiscalization/receipts', async (req, res) => {
 
 // Health check
 app.get('/', (req, res) => {
-  res.json({ status: 'OPERA-Badi Middleware radi!', version: '1.0.0' });
+  res.json({ status: 'OPERA-Badi Middleware radi!', version: '2.0.0' });
 });
 
 const PORT = process.env.PORT || 3000;
