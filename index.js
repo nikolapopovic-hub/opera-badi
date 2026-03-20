@@ -3,8 +3,6 @@ const axios = require('axios');
 const app = express();
 
 app.use(express.json({ limit: '10mb' }));
-app.use(express.text({ type: 'application/xml', limit: '10mb' }));
-app.use(express.text({ type: 'text/xml', limit: '10mb' }));
 
 // Badi API kredencijali
 const BADI_API_KEY = 'production.9ce7d0e4-f715-4f30-84f7-640fa3ff5218';
@@ -39,32 +37,15 @@ app.post('/fiscalization/receipts', async (req, res) => {
   try {
     const body = req.body;
 
-    // Navigiraj kroz OFIS JSON strukturu
+    // Tačna putanja iz logova
     let dataElements = [];
-    try {
-      const payload = body?.FiscalIntegrationPayload || body;
-      const events = payload?.BusinessEvents?.BusinessEvent || payload?.BusinessEvent;
-      const eventsArray = Array.isArray(events) ? events : [events];
-      
-      // Prolazi kroz sve evente i uzmi prvi koji ima AMOUNT
-      for (const evt of eventsArray) {
-        const inner = evt?.BusinessEvent || evt;
-        const details = inner?.Details?.Detail || [];
-        const arr = Array.isArray(details) ? details : [details];
-        const hasAmount = arr.find(e => e?.DataElement === 'AMOUNT');
-        if (hasAmount) {
-          dataElements = arr;
-          break;
-        }
-      }
-      
-      console.log('DataElements pronadjeni:', dataElements.length);
-    } catch(e) {
-      console.log('Greska pri parsiranju:', e.message);
-      dataElements = [];
-    }
-
+    const eventData = body?.BusinessEventsList?.BusinessEventData;
+    const eventsArr = Array.isArray(eventData) ? eventData : [eventData];
+    const firstEvent = eventsArr[0];
+    const details = firstEvent?.BusinessEvent?.Details?.Detail;
+    dataElements = Array.isArray(details) ? details : [];
     console.log('DataElements pronadjeni:', dataElements.length);
+    if (dataElements.length > 0) console.log('Prvi:', JSON.stringify(dataElements[0]));
 
     // Izvuci vrednosti
     const amount = parseFloat(getField(dataElements, 'AMOUNT') || getField(dataElements, 'TRX AMOUNT') || 0);
